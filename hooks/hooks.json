@@ -1,12 +1,12 @@
 {
-  "description": "Check for BSL Language Server installation on session start",
+  "description": "Check for BSL Language Server installation and updates on session start",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/check-bsl-ls.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/check-bsl-ls.sh\" 2>/dev/null || pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PLUGIN_ROOT}/hooks/check-bsl-ls.ps1\"",
             "timeout": 120
           }
         ]
