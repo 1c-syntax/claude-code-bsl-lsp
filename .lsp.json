@@ -1,0 +1,11 @@
+{
+  "bsl": {
+    "command": "bsl-language-server",
+    "args": ["lsp"],
+    "extensionToLanguage": {
+      ".bsl": "bsl",
+      ".os": "bsl"
+    },
+    "startupTimeout": 120000
+  }
+}

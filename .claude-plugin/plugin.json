@@ -1,0 +1,11 @@
+{
+  "name": "bsl-language-server",
+  "description": "BSL Language Server — LSP for 1C:Enterprise (BSL) and OneScript (OS) languages",
+  "version": "1.0.0",
+  "author": {
+    "name": "1c-syntax"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/1c-syntax/claude-bsl-ls",
+  "homepage": "https://github.com/1c-syntax/bsl-language-server"
+}
