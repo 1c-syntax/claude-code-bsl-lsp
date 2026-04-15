@@ -19,7 +19,7 @@ Provides Claude Code with code intelligence for `.bsl` and `.os` files via Langu
 ### Via Claude Code CLI
 
 ```bash
-copilot /plugin install 1c-syntax/claude-bsl-ls
+copilot /plugin install 1c-syntax/claude-code-bsl-lsp
 ```
 
 ### Manual
@@ -27,8 +27,8 @@ copilot /plugin install 1c-syntax/claude-bsl-ls
 Clone this repository and register it as a local plugin:
 
 ```bash
-git clone https://github.com/1c-syntax/claude-bsl-ls.git
-copilot /plugin add /path/to/claude-bsl-ls
+git clone https://github.com/1c-syntax/claude-code-bsl-lsp.git
+copilot /plugin add /path/to/claude-code-bsl-lsp
 ```
 
 ## Prerequisites
