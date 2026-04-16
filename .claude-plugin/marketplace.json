@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "bsl-language-server",
+  "version": "1.0.0",
+  "description": "BSL Language Server — LSP for 1C:Enterprise (BSL) and OneScript (OS) languages",
+  "owner": {
+    "name": "1c-syntax"
+  },
+  "plugins": [
+    {
+      "name": "bsl-language-server",
+      "description": "BSL Language Server — LSP for 1C:Enterprise (BSL) and OneScript (OS) languages",
+      "version": "1.0.0",
+      "author": {
+        "name": "1c-syntax"
+      },
+      "source": ".",
+      "category": "development"
+    }
+  ]
+}
