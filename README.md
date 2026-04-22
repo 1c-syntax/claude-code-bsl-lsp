@@ -1,6 +1,6 @@
 # BSL Language Server — Claude Code Plugin
 
-[Claude Code](https://docs.github.com/copilot/concepts/agents/about-copilot-cli) plugin that integrates [BSL Language Server](https://github.com/1c-syntax/bsl-language-server) as an LSP server for 1C:Enterprise (BSL) and [OneScript](http://oscript.io) (OS) files.
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) plugin that integrates [BSL Language Server](https://github.com/1c-syntax/bsl-language-server) as an LSP server for 1C:Enterprise (BSL) and [OneScript](http://oscript.io) (OS) files.
 
 ## Features
 
@@ -19,17 +19,23 @@ Provides Claude Code with code intelligence for `.bsl` and `.os` files via Langu
 
 ### Via Claude Code CLI
 
+Add this repository as a plugin marketplace, then install the plugin:
+
 ```bash
-copilot /plugin install 1c-syntax/claude-code-bsl-lsp
+claude
+/plugin marketplace add 1c-syntax/claude-code-bsl-lsp
+/plugin install bsl-language-server@bsl-language-server
 ```
 
 ### Manual
 
-Clone this repository and register it as a local plugin:
+Clone this repository and add it as a local marketplace:
 
 ```bash
 git clone https://github.com/1c-syntax/claude-code-bsl-lsp.git
-copilot /plugin add /path/to/claude-code-bsl-lsp
+claude
+/plugin marketplace add /path/to/claude-code-bsl-lsp
+/plugin install bsl-language-server@bsl-language-server
 ```
 
 ## How It Works
@@ -82,5 +88,5 @@ BSL Language Server can be configured via `.bsl-language-server.json` in your pr
 ## Links
 
 - [BSL Language Server](https://github.com/1c-syntax/bsl-language-server)
-- [Claude Code Documentation](https://docs.github.com/copilot/concepts/agents/about-copilot-cli)
+- [Claude Code Documentation](https://docs.claude.com/en/docs/claude-code/overview)
 - [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
