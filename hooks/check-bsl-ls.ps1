@@ -12,6 +12,10 @@ $ARCHIVE_NAME = "bsl-language-server_win.zip"
 $DATA_DIR = Join-Path $env:LOCALAPPDATA "Programs\bsl-language-server"
 $SERVER_INFO = Join-Path $DATA_DIR "SERVER-INFO"
 
+# GitHub endpoints (overridable for tests)
+$GITHUB_API_URL = if ($env:BSL_LS_GITHUB_API_URL) { $env:BSL_LS_GITHUB_API_URL } else { "https://api.github.com" }
+$GITHUB_URL = if ($env:BSL_LS_GITHUB_URL) { $env:BSL_LS_GITHUB_URL } else { "https://github.com" }
+
 # ── SERVER-INFO helpers ─────────────────────────────────────────────
 
 function Read-ServerInfo {
@@ -44,7 +48,7 @@ function Compare-SemVer {
 
 function Get-LatestVersion {
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$BSL_LS_REPO/releases/latest" `
+        $release = Invoke-RestMethod -Uri "$GITHUB_API_URL/repos/$BSL_LS_REPO/releases/latest" `
             -Headers @{ "User-Agent" = "claude-code-bsl-lsp" }
         return $release.tag_name
     } catch {
@@ -66,7 +70,7 @@ function Find-InstalledBinary {
 function Install-BslLanguageServer {
     param([string]$Version)
 
-    $url = "https://github.com/$BSL_LS_REPO/releases/download/$Version/$ARCHIVE_NAME"
+    $url = "$GITHUB_URL/$BSL_LS_REPO/releases/download/$Version/$ARCHIVE_NAME"
     $versionDir = Join-Path $DATA_DIR $Version
     $tmpZip = Join-Path $env:TEMP "bsl-ls-$Version.zip"
 
@@ -99,6 +103,65 @@ function Install-BslLanguageServer {
     return $true
 }
 
+# ── LSP launcher ───────────────────────────────────────────────────
+# .lsp.json starts the server via ${CLAUDE_PLUGIN_DATA}/bin/bsl-language-server,
+# so the LSP integration does not depend on PATH. Here bin is a directory
+# junction to the server directory: the path resolves to
+# bin\bsl-language-server.exe (the process spawner appends .exe) and the
+# jpackage launcher still finds its sibling app\ and runtime\ directories.
+
+function Remove-Launcher {
+    param([string]$Path)
+    # Get-Item (not Test-Path) so a dangling junction is found too
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item) { return }
+    if ($item.LinkType) {
+        # Non-recursive delete removes the link itself, never the target's
+        # contents (also works for a dangling link)
+        $item.Delete()
+    } else {
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+
+# Returns $true when the launcher points to $Version
+function Set-LspLauncher {
+    param([string]$Version)
+
+    $serverDir = Join-Path (Join-Path $DATA_DIR $Version) $ARCHIVE_DIR
+    if (-not (Test-Path (Join-Path $serverDir $BINARY_SUBPATH))) { return $false }
+
+    if (-not $env:CLAUDE_PLUGIN_DATA) {
+        Write-Host "[bsl-language-server] Warning: CLAUDE_PLUGIN_DATA is not set, LSP launcher not created."
+        Write-Host "          Update Claude Code to the latest version."
+        return $false
+    }
+
+    $launcherDir = Join-Path $env:CLAUDE_PLUGIN_DATA "bin"
+    $newDir = "$launcherDir.new"
+    New-Item -ItemType Directory -Path $env:CLAUDE_PLUGIN_DATA -Force | Out-Null
+
+    # Build the new link first, so a failure keeps the current launcher.
+    # Junctions need no admin rights on Windows; elsewhere use a directory symlink.
+    $linkType = if ($IsWindows -or $PSVersionTable.PSEdition -eq "Desktop") { "Junction" } else { "SymbolicLink" }
+    Remove-Launcher $newDir
+    New-Item -ItemType $linkType -Path $newDir -Target $serverDir | Out-Null
+    if (-not (Test-Path (Join-Path $newDir $BINARY_SUBPATH))) {
+        Remove-Launcher $newDir
+        Write-Host "[bsl-language-server] Failed to create LSP launcher: $launcherDir"
+        return $false
+    }
+
+    Remove-Launcher $launcherDir
+    Rename-Item -LiteralPath $newDir -NewName (Split-Path $launcherDir -Leaf)
+    if (-not (Test-Path (Join-Path $launcherDir $BINARY_SUBPATH))) {
+        Remove-Launcher $newDir
+        Write-Host "[bsl-language-server] Failed to create LSP launcher: $launcherDir"
+        return $false
+    }
+    return $true
+}
+
 # ── Cleanup old versions ───────────────────────────────────────────
 
 function Remove-OldVersions {
@@ -124,6 +187,7 @@ if ($installedVersion -and $lastUpdate -gt 0) {
     if ($elapsedS -lt $UPDATE_INTERVAL) {
         $binary = Find-InstalledBinary $installedVersion
         if ($binary) {
+            [void](Set-LspLauncher -Version $installedVersion)
             Write-Host "[bsl-language-server] Up to date ($installedVersion)"
             exit 0
         }
@@ -134,7 +198,13 @@ if ($installedVersion -and $lastUpdate -gt 0) {
 $latestVersion = Get-LatestVersion
 if (-not $latestVersion) {
     if ($installedVersion) {
+        if (-not (Find-InstalledBinary $installedVersion)) {
+            Write-Host "[bsl-language-server] Cannot reach GitHub API and $installedVersion binary not found."
+            Write-Host "          Install manually: https://github.com/$BSL_LS_REPO/releases/latest"
+            exit 0
+        }
         Write-ServerInfo -Version $installedVersion -Timestamp $nowMs
+        [void](Set-LspLauncher -Version $installedVersion)
         Write-Host "[bsl-language-server] Offline, using $installedVersion"
         exit 0
     }
@@ -158,20 +228,20 @@ if (-not $installedVersion) {
 if ($needsInstall) {
     if (Install-BslLanguageServer -Version $latestVersion) {
         Write-ServerInfo -Version $latestVersion -Timestamp $nowMs
-        Remove-OldVersions -CurrentVersion $latestVersion
-
-        # Check PATH
-        $binaryDir = Join-Path $DATA_DIR "$latestVersion\$ARCHIVE_DIR"
-        $pathDirs = $env:PATH -split ";"
-        if ($binaryDir -notin $pathDirs) {
-            Write-Host "[bsl-language-server] Warning: binary dir is not in PATH."
-            Write-Host "          Run: [Environment]::SetEnvironmentVariable('PATH', `$env:PATH + ';$binaryDir', 'User')"
+        # Keep the previous version if the launcher could not be switched
+        if (Set-LspLauncher -Version $latestVersion) {
+            Remove-OldVersions -CurrentVersion $latestVersion
         }
     } else {
         Write-Host "          Install manually: https://github.com/$BSL_LS_REPO/releases/latest"
+        # Keep serving the installed version, if any
+        if ($installedVersion -and (Find-InstalledBinary $installedVersion)) {
+            [void](Set-LspLauncher -Version $installedVersion)
+        }
     }
 } else {
     Write-ServerInfo -Version $installedVersion -Timestamp $nowMs
+    [void](Set-LspLauncher -Version $installedVersion)
     Write-Host "[bsl-language-server] Up to date ($installedVersion)"
 }
 

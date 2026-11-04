@@ -1,6 +1,6 @@
 {
   "bsl": {
-    "command": "bsl-language-server",
+    "command": "${CLAUDE_PLUGIN_DATA}/bin/bsl-language-server",
     "args": ["lsp"],
     "extensionToLanguage": {
       ".bsl": "bsl",

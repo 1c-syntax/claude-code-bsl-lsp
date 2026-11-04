@@ -57,7 +57,7 @@ read_installed_version() {
 read_last_update() {
     if [ -f "${SERVER_INFO}" ]; then
         grep -o '"lastUpdate"[[:space:]]*:[[:space:]]*[0-9]*' "${SERVER_INFO}" 2>/dev/null \
-            | head -1 | sed 's/.*[[:space:]]//'
+            | head -1 | sed 's/.*:[[:space:]]*//'
     fi
 }
 
@@ -182,6 +182,60 @@ WRAPPER
     return 0
 }
 
+# ── LSP launcher ───────────────────────────────────────────────────
+# .lsp.json starts the server via ${CLAUDE_PLUGIN_DATA}/bin/bsl-language-server,
+# so the LSP integration does not depend on PATH.
+#   Linux / macOS: bin/bsl-language-server is a symlink to the binary.
+#   Windows: bin is a directory junction to the server directory, so the
+#     path resolves to bin\bsl-language-server.exe (the process spawner
+#     appends .exe) and the jpackage launcher still finds its sibling
+#     app\ and runtime\ directories.
+
+link_launcher() {
+    local version="$1"
+    local binary
+    binary="$(find_installed_binary "${version}")"
+    [ -n "${binary}" ] || return 1
+
+    if [ -z "${CLAUDE_PLUGIN_DATA:-}" ]; then
+        echo "[bsl-language-server] Warning: CLAUDE_PLUGIN_DATA is not set, LSP launcher not created."
+        echo "          Update Claude Code to the latest version."
+        return 1
+    fi
+
+    if [ "${PLATFORM}" = "win" ]; then
+        local plugin_data launcher_dir new_dir target
+        plugin_data="$(cygpath -u "${CLAUDE_PLUGIN_DATA}")"
+        launcher_dir="$(cygpath -w "${plugin_data}/bin")"
+        new_dir="${launcher_dir}.new"
+        target="$(cygpath -w "${DATA_DIR}/${version}/${ARCHIVE_DIR}")"
+        # Build the new junction first, so a failure keeps the current launcher.
+        # rmdir removes a junction itself, never the target's contents.
+        if ! mkdir -p "${plugin_data}" 2> /dev/null; then
+            launcher_failed "${launcher_dir}"; return 1
+        fi
+        MSYS2_ARG_CONV_EXCL='*' cmd /c rmdir "${new_dir}" > /dev/null 2>&1
+        if ! MSYS2_ARG_CONV_EXCL='*' cmd /c mklink /J "${new_dir}" "${target}" > /dev/null 2>&1; then
+            launcher_failed "${launcher_dir}"; return 1
+        fi
+        MSYS2_ARG_CONV_EXCL='*' cmd /c rmdir "${launcher_dir}" > /dev/null 2>&1
+        if ! MSYS2_ARG_CONV_EXCL='*' cmd /c ren "${new_dir}" bin > /dev/null 2>&1; then
+            MSYS2_ARG_CONV_EXCL='*' cmd /c rmdir "${new_dir}" > /dev/null 2>&1
+            launcher_failed "${launcher_dir}"; return 1
+        fi
+    else
+        # ln -sfn replaces the link in place; on failure the old one stays
+        local launcher_dir="${CLAUDE_PLUGIN_DATA}/bin"
+        if ! { mkdir -p "${launcher_dir}" && ln -sfn "${binary}" "${launcher_dir}/${BINARY_NAME}"; } 2> /dev/null; then
+            launcher_failed "${launcher_dir}"; return 1
+        fi
+    fi
+}
+
+launcher_failed() {
+    echo "[bsl-language-server] Failed to create LSP launcher: $1"
+}
+
 # ── Cleanup old versions ───────────────────────────────────────────
 
 cleanup_old_versions() {
@@ -213,6 +267,7 @@ if [ -n "${last_update}" ] && [ -n "${installed_version}" ]; then
     if [ "${elapsed_s}" -lt "${UPDATE_INTERVAL}" ]; then
         binary="$(find_installed_binary "${installed_version}")"
         if [ -n "${binary}" ]; then
+            link_launcher "${installed_version}"
             echo "[bsl-language-server] Up to date (${installed_version})"
             exit 0
         fi
@@ -224,7 +279,13 @@ latest_version="$(get_latest_version)"
 
 if [ -z "${latest_version}" ]; then
     if [ -n "${installed_version}" ]; then
+        if [ -z "$(find_installed_binary "${installed_version}")" ]; then
+            echo "[bsl-language-server] Cannot reach GitHub API and ${installed_version} binary not found."
+            echo "          Install manually: https://github.com/${BSL_LS_REPO}/releases/latest"
+            exit 0
+        fi
         write_server_info "${installed_version}" "${now_ms}"
+        link_launcher "${installed_version}"
         echo "[bsl-language-server] Offline, using ${installed_version}"
         exit 0
     fi
@@ -250,17 +311,20 @@ fi
 if [ "${needs_install}" = true ]; then
     if download_and_install "${latest_version}"; then
         write_server_info "${latest_version}" "${now_ms}"
-        cleanup_old_versions "${latest_version}"
-
-        if [ "${PLATFORM}" != "win" ] && [[ ":${PATH}:" != *":${BIN_DIR}:"* ]]; then
-            echo "[bsl-language-server] Warning: ${BIN_DIR} is not in PATH."
-            echo "          Add: export PATH=\"${BIN_DIR}:\${PATH}\""
+        # Keep the previous version if the launcher could not be switched
+        if link_launcher "${latest_version}"; then
+            cleanup_old_versions "${latest_version}"
         fi
     else
         echo "          Install manually: https://github.com/${BSL_LS_REPO}/releases/latest"
+        # Keep serving the installed version, if any
+        if [ -n "${installed_version}" ] && [ -n "$(find_installed_binary "${installed_version}")" ]; then
+            link_launcher "${installed_version}"
+        fi
     fi
 else
     write_server_info "${installed_version}" "${now_ms}"
+    link_launcher "${installed_version}"
     echo "[bsl-language-server] Up to date (${installed_version})"
 fi
 

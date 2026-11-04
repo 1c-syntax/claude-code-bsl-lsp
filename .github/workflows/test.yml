@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Hook tests (bash)
+        shell: bash
+        run: bash tests/check-bsl-ls.test.sh
+
+      - name: Hook tests (PowerShell)
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/check-bsl-ls.test.ps1
