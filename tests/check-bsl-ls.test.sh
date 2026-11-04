@@ -224,6 +224,65 @@ test_throttle_skips_github_check() {
     teardown
 }
 
+test_failed_launcher_keeps_old_version() {
+    # If the launcher cannot be (re)created, removing the previous version
+    # would leave nothing working — keep it.
+    setup
+    publish_release "v1.0.0"
+    run_hook
+    rm -rf "${CLAUDE_PLUGIN_DATA}"
+    touch "${CLAUDE_PLUGIN_DATA}" # a file: nothing can be created inside
+    publish_release "v1.1.0"
+    echo '{"version":"v1.0.0","lastUpdate":0}' > "$(data_dir)/SERVER-INFO"
+    run_hook
+
+    if [ -d "$(data_dir)/v1.0.0" ]; then
+        pass "launcher failure: previous version is not removed"
+    else
+        fail "launcher failure: previous version is not removed" "log: $(cat "${SANDBOX}/hook.log")"
+    fi
+    teardown
+}
+
+test_offline_with_missing_binary_reports_it() {
+    setup
+    publish_release "v1.0.0"
+    run_hook
+    rm -rf "$(data_dir)/v1.0.0"
+    echo '{"version":"v1.0.0","lastUpdate":0}' > "$(data_dir)/SERVER-INFO"
+    rm -f "${RELEASES}/latest" # API unreachable
+    run_hook
+
+    local log
+    log="$(cat "${SANDBOX}/hook.log")"
+    if [[ "${log}" != *"Offline, using"* ]] && [[ "${log}" == *"binary not found"* ]]; then
+        pass "offline + missing binary: reported, not claimed as in use"
+    else
+        fail "offline + missing binary: reported, not claimed as in use" "log: ${log}"
+    fi
+    teardown
+}
+
+test_failed_download_keeps_installed_version_linked() {
+    setup
+    publish_release "v1.0.0"
+    run_hook
+    rm -rf "${CLAUDE_PLUGIN_DATA}"
+    publish_release "v1.1.0"
+    rm -f "${RELEASES}/v1.1.0.zip" # download fails
+    echo '{"version":"v1.0.0","lastUpdate":0}' > "$(data_dir)/SERVER-INFO"
+    run_hook
+
+    local out
+    out="$(run_launcher lsp 2>&1)"
+    if [ "${out}" = "fake-bsl v1.0.0 lsp" ]; then
+        pass "failed download: launcher points to the installed version"
+    else
+        fail "failed download: launcher points to the installed version" "got: ${out}; log: $(cat "${SANDBOX}/hook.log")"
+    fi
+    teardown
+}
+
 # ── Run ─────────────────────────────────────────────────────────────
 
 echo "check-bsl-ls.sh"
@@ -233,6 +292,9 @@ test_existing_install_without_launcher_gets_launcher
 test_update_repoints_launcher
 test_offline_with_existing_install_keeps_launcher
 test_throttle_skips_github_check
+test_failed_launcher_keeps_old_version
+test_offline_with_missing_binary_reports_it
+test_failed_download_keeps_installed_version_linked
 
 echo
 echo "passed: ${PASSED}, failed: ${FAILED}"

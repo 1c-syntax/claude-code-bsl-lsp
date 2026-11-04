@@ -71,7 +71,12 @@ The LSP server is started via that launcher (see `.lsp.json`), so it works witho
 
 The plugin automatically downloads BSL Language Server on first session start. It requires a Claude Code version that provides `${CLAUDE_PLUGIN_DATA}` to plugins.
 
-If automatic installation fails, download the latest release for your platform from [GitHub Releases](https://github.com/1c-syntax/bsl-language-server/releases/latest), extract it into the data directory above as `vX.Y.Z/` and start a new session — the hook will create the launcher.
+If automatic installation fails, install manually:
+
+1. Download the latest release for your platform from [GitHub Releases](https://github.com/1c-syntax/bsl-language-server/releases/latest).
+2. Extract it into the data directory above as `vX.Y.Z/`, so the binary ends up at `vX.Y.Z/<binary path after extraction>` (see the table above).
+3. Create `SERVER-INFO` in the data directory with `{"version":"vX.Y.Z","lastUpdate":0}`.
+4. Start a new session — the hook uses the version recorded in `SERVER-INFO` and creates the launcher for it (it does not scan `vX.Y.Z/` directories on its own).
 
 ### Windows Note
 

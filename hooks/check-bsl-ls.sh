@@ -204,22 +204,36 @@ link_launcher() {
     fi
 
     if [ "${PLATFORM}" = "win" ]; then
-        local plugin_data launcher_dir target
+        local plugin_data launcher_dir new_dir target
         plugin_data="$(cygpath -u "${CLAUDE_PLUGIN_DATA}")"
         launcher_dir="$(cygpath -w "${plugin_data}/bin")"
+        new_dir="${launcher_dir}.new"
         target="$(cygpath -w "${DATA_DIR}/${version}/${ARCHIVE_DIR}")"
-        mkdir -p "${plugin_data}"
-        # rmdir removes a junction itself, never the target's contents
+        # Build the new junction first, so a failure keeps the current launcher.
+        # rmdir removes a junction itself, never the target's contents.
+        if ! mkdir -p "${plugin_data}" 2> /dev/null; then
+            launcher_failed "${launcher_dir}"; return 1
+        fi
+        MSYS2_ARG_CONV_EXCL='*' cmd /c rmdir "${new_dir}" > /dev/null 2>&1
+        if ! MSYS2_ARG_CONV_EXCL='*' cmd /c mklink /J "${new_dir}" "${target}" > /dev/null 2>&1; then
+            launcher_failed "${launcher_dir}"; return 1
+        fi
         MSYS2_ARG_CONV_EXCL='*' cmd /c rmdir "${launcher_dir}" > /dev/null 2>&1
-        if ! MSYS2_ARG_CONV_EXCL='*' cmd /c mklink /J "${launcher_dir}" "${target}" > /dev/null; then
-            echo "[bsl-language-server] Failed to create LSP launcher: ${launcher_dir}"
-            return 1
+        if ! MSYS2_ARG_CONV_EXCL='*' cmd /c ren "${new_dir}" bin > /dev/null 2>&1; then
+            MSYS2_ARG_CONV_EXCL='*' cmd /c rmdir "${new_dir}" > /dev/null 2>&1
+            launcher_failed "${launcher_dir}"; return 1
         fi
     else
+        # ln -sfn replaces the link in place; on failure the old one stays
         local launcher_dir="${CLAUDE_PLUGIN_DATA}/bin"
-        mkdir -p "${launcher_dir}"
-        ln -sfn "${binary}" "${launcher_dir}/${BINARY_NAME}"
+        if ! { mkdir -p "${launcher_dir}" && ln -sfn "${binary}" "${launcher_dir}/${BINARY_NAME}"; } 2> /dev/null; then
+            launcher_failed "${launcher_dir}"; return 1
+        fi
     fi
+}
+
+launcher_failed() {
+    echo "[bsl-language-server] Failed to create LSP launcher: $1"
 }
 
 # ── Cleanup old versions ───────────────────────────────────────────
@@ -265,6 +279,11 @@ latest_version="$(get_latest_version)"
 
 if [ -z "${latest_version}" ]; then
     if [ -n "${installed_version}" ]; then
+        if [ -z "$(find_installed_binary "${installed_version}")" ]; then
+            echo "[bsl-language-server] Cannot reach GitHub API and ${installed_version} binary not found."
+            echo "          Install manually: https://github.com/${BSL_LS_REPO}/releases/latest"
+            exit 0
+        fi
         write_server_info "${installed_version}" "${now_ms}"
         link_launcher "${installed_version}"
         echo "[bsl-language-server] Offline, using ${installed_version}"
@@ -292,10 +311,16 @@ fi
 if [ "${needs_install}" = true ]; then
     if download_and_install "${latest_version}"; then
         write_server_info "${latest_version}" "${now_ms}"
-        link_launcher "${latest_version}"
-        cleanup_old_versions "${latest_version}"
+        # Keep the previous version if the launcher could not be switched
+        if link_launcher "${latest_version}"; then
+            cleanup_old_versions "${latest_version}"
+        fi
     else
         echo "          Install manually: https://github.com/${BSL_LS_REPO}/releases/latest"
+        # Keep serving the installed version, if any
+        if [ -n "${installed_version}" ] && [ -n "$(find_installed_binary "${installed_version}")" ]; then
+            link_launcher "${installed_version}"
+        fi
     fi
 else
     write_server_info "${installed_version}" "${now_ms}"
