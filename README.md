@@ -88,6 +88,8 @@ bash tests/check-bsl-ls.test.sh
 pwsh -NoProfile -File tests/check-bsl-ls.test.ps1
 ```
 
+CI runs both suites on Linux, macOS and Windows (`.github/workflows/test.yml`); on Windows the launcher is a real directory junction.
+
 ## Configuration
 
 BSL Language Server can be configured via `.bsl-language-server.json` in your project root. See the [BSL Language Server documentation](https://1c-syntax.github.io/bsl-language-server/en) for available options.
