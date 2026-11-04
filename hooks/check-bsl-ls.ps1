@@ -109,7 +109,7 @@ function Install-BslLanguageServer {
 function Set-LspLauncher {
     param([string]$Version)
 
-    $serverDir = Join-Path $DATA_DIR "$Version\$ARCHIVE_DIR"
+    $serverDir = Join-Path (Join-Path $DATA_DIR $Version) $ARCHIVE_DIR
     if (-not (Test-Path (Join-Path $serverDir $BINARY_SUBPATH))) { return }
 
     if (-not $env:CLAUDE_PLUGIN_DATA) {
@@ -125,14 +125,17 @@ function Set-LspLauncher {
     $existing = Get-Item -LiteralPath $launcherDir -Force -ErrorAction SilentlyContinue
     if ($existing) {
         if ($existing.LinkType) {
-            # Removes the junction itself, never the target's contents
-            [System.IO.Directory]::Delete($launcherDir)
+            # Non-recursive delete removes the link itself, never the target's
+            # contents (also works for a dangling link)
+            $existing.Delete()
         } else {
             Remove-Item -LiteralPath $launcherDir -Recurse -Force
         }
     }
 
-    New-Item -ItemType Junction -Path $launcherDir -Target $serverDir | Out-Null
+    # Junctions need no admin rights on Windows; elsewhere use a directory symlink
+    $linkType = if ($IsWindows -or $PSVersionTable.PSEdition -eq "Desktop") { "Junction" } else { "SymbolicLink" }
+    New-Item -ItemType $linkType -Path $launcherDir -Target $serverDir | Out-Null
     if (-not (Test-Path (Join-Path $launcherDir $BINARY_SUBPATH))) {
         Write-Host "[bsl-language-server] Failed to create LSP launcher: $launcherDir"
     }

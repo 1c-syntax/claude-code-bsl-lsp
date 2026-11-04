@@ -81,10 +81,11 @@ On Windows, the plugin works via both:
 
 ## Development
 
-Run the hook tests (Linux / macOS, requires `jq`, `zip`, `unzip`):
+Run the hook tests (bash tests require `jq`, `zip`, `unzip`; PowerShell tests require PowerShell 7+):
 
 ```bash
 bash tests/check-bsl-ls.test.sh
+pwsh -NoProfile -File tests/check-bsl-ls.test.ps1
 ```
 
 ## Configuration
