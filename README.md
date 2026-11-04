@@ -45,7 +45,10 @@ On each session start the plugin:
 1. Checks if BSL Language Server is already installed
 2. Queries the GitHub API for the latest release (throttled to once per 8 minutes)
 3. Downloads and installs the native binary if a newer version is available
-4. Cleans up old versions automatically
+4. Points the LSP launcher `${CLAUDE_PLUGIN_DATA}/bin/bsl-language-server` at the installed version
+5. Cleans up old versions automatically
+
+The LSP server is started via that launcher (see `.lsp.json`), so it works without adding anything to `PATH`.
 
 ### Platform-Specific Binary Paths
 
@@ -57,22 +60,32 @@ On each session start the plugin:
 
 ### Install Locations
 
-| Platform | Data directory | Symlink / wrapper |
-|----------|---------------|-------------------|
-| Linux / macOS | `~/.local/share/bsl-language-server/` | `~/.local/bin/bsl-language-server` |
-| Windows       | `%LOCALAPPDATA%\Programs\bsl-language-server\` | — (add binary dir to PATH) |
+| Platform | Data directory | LSP launcher (`${CLAUDE_PLUGIN_DATA}/bin`) |
+|----------|---------------|--------------------------------------------|
+| Linux / macOS | `~/.local/share/bsl-language-server/` | symlink `bsl-language-server` → binary (also linked to `~/.local/bin`) |
+| Windows       | `%LOCALAPPDATA%\Programs\bsl-language-server\` | directory junction → `vX.Y.Z\bsl-language-server\` (contains `bsl-language-server.exe`) |
+
+`${CLAUDE_PLUGIN_DATA}` is the plugin's persistent data directory provided by Claude Code (`~/.claude/plugins/data/<plugin-id>/`). On Windows the launcher is a junction rather than a copy because the jpackage launcher resolves its `app\` and `runtime\` directories relative to its own location.
 
 ## Prerequisites
 
-The plugin automatically downloads BSL Language Server on first session start. If automatic installation fails, install manually:
+The plugin automatically downloads BSL Language Server on first session start. It requires a Claude Code version that provides `${CLAUDE_PLUGIN_DATA}` to plugins.
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/1c-syntax/bsl-language-server/releases/latest) and place the `bsl-language-server` binary in your `PATH`.
+If automatic installation fails, download the latest release for your platform from [GitHub Releases](https://github.com/1c-syntax/bsl-language-server/releases/latest), extract it into the data directory above as `vX.Y.Z/` and start a new session — the hook will create the launcher.
 
 ### Windows Note
 
 On Windows, the plugin works via both:
 - **Git Bash** (comes with [Git for Windows](https://git-scm.com/download/win)) — used by default
 - **PowerShell 6+** — fallback if bash is not available
+
+## Development
+
+Run the hook tests (Linux / macOS, requires `jq`, `zip`, `unzip`):
+
+```bash
+bash tests/check-bsl-ls.test.sh
+```
 
 ## Configuration
 
