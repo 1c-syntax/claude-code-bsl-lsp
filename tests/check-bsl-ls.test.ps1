@@ -77,27 +77,48 @@ function Start-FakeGitHub([string]$Version) {
 
     $serverScript = Join-Path $script:Sandbox "server.py"
     @'
-import functools, http.server, sys
+import functools, http.server, sys, traceback
 class Handler(http.server.SimpleHTTPRequestHandler):
     def guess_type(self, path):
         return "application/json" if path.endswith("latest") else "application/zip"
     def log_message(self, *args):
         pass
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Handler, directory=sys.argv[1]))
-print(server.server_address[1], flush=True)
-server.serve_forever()
+try:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), functools.partial(Handler, directory=sys.argv[1]))
+    server.serve_forever()
+except BaseException:
+    with open(sys.argv[3], "w") as log:
+        traceback.print_exc(file=log)
+    raise
 '@ | Set-Content $serverScript
+    $serverLog = Join-Path $script:Sandbox "server.log"
+
+    # Pick a free port here and wait until the server accepts connections
+    # (no reliance on reading the child's redirected stdout)
+    $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $probe.Start()
+    $port = $probe.LocalEndpoint.Port
+    $probe.Stop()
 
     $python = if ($IsWindows) { "python" } else { "python3" }
-    $portFile = Join-Path $script:Sandbox "port"
-    $script:Server = Start-Process -FilePath $python -ArgumentList "`"$serverScript`"", "`"$www`"" `
-        -RedirectStandardOutput $portFile -PassThru -NoNewWindow
-    $deadline = (Get-Date).AddSeconds(15)
-    while (-not ((Test-Path $portFile) -and (Get-Content $portFile -Raw))) {
-        if ((Get-Date) -gt $deadline) { throw "fake GitHub server did not start" }
-        Start-Sleep -Milliseconds 100
+    $script:Server = Start-Process -FilePath $python -ArgumentList "`"$serverScript`"", "`"$www`"", $port, "`"$serverLog`"" `
+        -PassThru -NoNewWindow
+    $deadline = (Get-Date).AddSeconds(30)
+    while ($true) {
+        $client = [System.Net.Sockets.TcpClient]::new()
+        try {
+            $client.Connect([System.Net.IPAddress]::Loopback, $port)
+            break
+        } catch {
+            $log = if (Test-Path $serverLog) { Get-Content $serverLog -Raw } else { "" }
+            if ($script:Server.HasExited) { throw "fake GitHub server exited with code $($script:Server.ExitCode): $log" }
+            if ((Get-Date) -gt $deadline) { throw "fake GitHub server did not start on port ${port}: $log" }
+            Start-Sleep -Milliseconds 100
+        } finally {
+            $client.Dispose()
+        }
     }
-    $script:GitHubUrl = "http://127.0.0.1:$((Get-Content $portFile -Raw).Trim())"
+    $script:GitHubUrl = "http://127.0.0.1:$port"
 }
 
 function Invoke-Hook([switch]$NoPluginData) {
